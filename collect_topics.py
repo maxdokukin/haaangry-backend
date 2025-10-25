@@ -1,10 +1,13 @@
 # pip install -U yt-dlp
 import yt_dlp
 import json
+import re
 
-VERBOSE = True  # set False to reduce logs
+VERBOSE = True  # toggle logs
 
-# ---- your function, same search logic (ytsearch{max_results}:{query}) ----
+SHORTS_RE = re.compile(r"\bshorts\b", re.IGNORECASE)
+
+# --- unchanged search logic (ytsearch{max_results}:{query}) ---
 def get_youtube_links(search_query, max_results):
     ydl_opts = {
         'quiet': not VERBOSE,
@@ -20,15 +23,38 @@ def get_youtube_links(search_query, max_results):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         result = ydl.extract_info(search_url, download=False)
 
-    video_links_and_lengths = []
-    for entry in result.get('entries', []) or []:
-        link = f"https://www.youtube.com/watch?v={entry['id']}"
-        duration = entry.get('duration', 0)
-        video_links_and_lengths.append((link, duration))
+    items = []
+    for idx, entry in enumerate((result.get('entries') or []), 1):
+        vid = entry.get('id')
+        if not vid:
+            if VERBOSE:
+                print(f"[skip] {search_query} item#{idx}: missing id")
+            continue
+
+        title = entry.get('title') or ""
+        desc  = entry.get('description') or ""
+        dur   = int(entry.get('duration') or 0)
+
+        if dur <= 0:
+            if VERBOSE:
+                print(f"[skip] {search_query} {vid}: no duration")
+            continue
+        if dur > 180:
+            if VERBOSE:
+                print(f"[skip] {search_query} {vid}: duration {dur}s > 180s")
+            continue
+        text = f"{title}\n{desc}"
+        # if not SHORTS_RE.search(text):
+        #     if VERBOSE:
+        #         print(f"[skip] {search_query} {vid}: no 'shorts' keyword in title/description")
+        #     continue
+
+        link = f"https://www.youtube.com/watch?v={vid}"
+        items.append({"url": link, "title": title, "duration_seconds": dur})
 
     if VERBOSE:
-        print(f"[found] {search_query}: {len(video_links_and_lengths)} items")
-    return video_links_and_lengths
+        print(f"[found] {search_query}: {len(items)} items kept")
+    return items
 
 # ---- topics of interest ----
 TOPICS = [
@@ -48,21 +74,21 @@ TOPICS = [
     # "trinidad doubles","feijoada","cachapas","smoothie bowl","fresh juice","easy cocktails"
 ]
 
-# ---- iterate topics and write JSON: { topic: [links...] } ----
 def main():
     max_results = 10
     out = {}
+    total = 0
     for topic in TOPICS:
-        vids = get_youtube_links(topic, max_results)
-        links = [link for link, _dur in vids]
-        out[topic] = links
+        kept = get_youtube_links(topic, max_results)
+        out[topic] = kept
+        total += len(kept)
         if VERBOSE:
-            print(f"[write] {topic}: {len(links)} links")
+            print(f"[write] {topic}: {len(kept)} items")
 
     outfile = "youtube_video_links.json"
     with open(outfile, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
-    print(f"[done] wrote {outfile} with {sum(len(v) for v in out.values())} total links")
+    print(f"[done] wrote {outfile} with {total} total items")
 
 if __name__ == "__main__":
     main()

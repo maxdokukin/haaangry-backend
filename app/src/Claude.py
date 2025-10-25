@@ -5,6 +5,9 @@ from typing import List, Dict, Any, Optional
 import requests
 import urllib.parse
 import anthropic
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ClaudeClient:
@@ -18,7 +21,7 @@ class ClaudeClient:
     def __init__(
             self,
             api_key: Optional[str] = None,
-            model: str = "claude-3-5-sonnet-latest",
+            model: str = "claude-haiku-4-5",
             max_tokens: int = 1024,
             temperature: float = 0.0,
             request_timeout: int = 30,
@@ -232,7 +235,7 @@ class ClaudeClient:
         return "https://r.jina.ai/http://" + urllib.parse.quote(tail, safe="/:%?&=#")
 
 # Example
-# if __name__ == "__main__":
-#     bot = ClaudeClient()
-#     print(bot.ask("In one sentence, what is entropy in information theory?"))
-#     print(bot.ask_with_web("Summarize the latest on quantum error correction and cite URLs."))
+if __name__ == "__main__":
+    bot = ClaudeClient()
+    print(bot.ask("In one sentence, what is entropy in information theory?"))
+    print(bot.ask_with_web("Summarize the latest on quantum error correction and cite URLs."))

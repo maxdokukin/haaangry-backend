@@ -3,8 +3,8 @@ from pathlib import Path
 import yt_dlp
 
 def main(
-    input_json="yt_links_arch.json",
-    output_json="yt_links_arch_dwlds.json",
+    input_json="youtube_video_links_enriched.json",
+    output_json="youtube_video_links_enriched_downloaded.json",
     download_dir="downloads",
     fmt="bv*+ba/b"  # best video+audio, fallback to best single
 ):

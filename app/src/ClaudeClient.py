@@ -93,38 +93,15 @@ class ClaudeClient:
             else {"type": "object", "additionalProperties": True}
         )
 
-        tools = [
-            {
-                "name": "return_json",
-                "description": "Return the final answer strictly as JSON matching input_schema.",
-                "input_schema": schema,
-            }
-        ]
-
-        try:
-            resp = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                messages=[{"role": "user", "content": p}],
-                tools=tools,
-                tool_choice={"type": "tool", "name": "return_json"},
-            )
-            obj = self._first_tool_input(resp)
-            if obj is not None:
-                return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
-        except Exception:
-            # Fall back to strict prompting + slicing
-            pass
-
-        # Fallback: strong system prompt and slice JSON from text
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             system=(
-                "Output JSON only. No prose. No code fences. "
-                "If unsure, return an empty JSON object {}."
+                f"Task: Gather and transform data. "
+                f"Return JSON only that matches any reasonable object shape for the task. "
+                f"No commentary. No code fences. No prefixes or suffixes."
+                f"SAMPLE JSON SCHEMA REQUIRED: {schema}"
             ),
             messages=[{"role": "user", "content": p}],
         )
@@ -136,6 +113,11 @@ class ClaudeClient:
         then minify. Adds strict instructions to avoid non-JSON output.
         """
         p = prompt if prompt is not None else self.prompt
+        schema = (
+            self.json_schema
+            if isinstance(self.json_schema, dict)
+            else {"type": "object", "additionalProperties": True}
+        )
         tools = [
             {"type": "web_search_20250305", "name": "web_search", "max_uses": 2},
             {
@@ -143,16 +125,17 @@ class ClaudeClient:
                 "name": "web_fetch",
                 "max_uses": 2,
                 "citations": {"enabled": True},
-            },
+            }
         ]
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             system=(
-                "Task: Gather and transform data. "
-                "Return JSON only that matches any reasonable object shape for the task. "
-                "No commentary. No code fences. No prefixes or suffixes."
+                f"Task: Gather and transform data. "
+                f"Return JSON only that matches any reasonable object shape for the task. "
+                f"No commentary. No code fences. No prefixes or suffixes."
+                f"SAMPLE JSON SCHEMA REQUIRED: {schema}"
             ),
             messages=[{"role": "user", "content": p}],
             tools=tools,

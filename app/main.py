@@ -1,7 +1,8 @@
 # app/main.py
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pathlib import Path
 import os
+import json
 import traceback
 from urllib.parse import unquote, parse_qs
 
@@ -25,7 +26,7 @@ from .mock_data import options_for
 
 # Claude client (optional)
 try:
-    from .src.Claude import ClaudeClient  # requires ANTHROPIC_API_KEY in env
+    from .src.ClaudeClient import ClaudeClient  # requires ANTHROPIC_API_KEY in env
 except Exception as e:
     print(f"[startup] Claude import failed: {e}")
     traceback.print_exc()
@@ -44,11 +45,18 @@ RAW_ITEMS: List[dict] = []
 DOWNLOAD_DIR: Path | None = None
 CLAUDE: Optional["ClaudeClient"] = None  # type: ignore[name-defined]
 
+# JSON schemas
+# Recipe links schema: an array of up to 3 entries, each {title, link}
+RECIPE_LINKS_SCHEMA = """
+[
+    {label: "Super delicios cake", "link": "https://..."},
+    ...
+]
+"""
 
 def _short(s: str, limit: int = 160) -> str:
     s = (s or "").replace("\n", "\\n")
     return s if len(s) <= limit else s[:limit] + "…"
-
 
 @app.on_event("startup")
 def startup():
@@ -77,17 +85,11 @@ def startup():
     else:
         print(f"[startup] No video mount. DOWNLOAD_DIR={DOWNLOAD_DIR} exists={DOWNLOAD_DIR.exists() if DOWNLOAD_DIR else None}")
 
-    # Lazy Claude init; keep app running if missing key
+    # Claude init
     if ClaudeClient is not None:
-        try:
-            key_present = bool(os.environ.get("ANTHROPIC_API_KEY"))
-            print(f"[startup] ANTHROPIC_API_KEY present={key_present}")
-            CLAUDE = ClaudeClient()
-            print(f"[startup] Claude initialized.")
-        except Exception as e:
-            print(f"[startup] Claude init failed: {e}")
-            traceback.print_exc()
-            CLAUDE = None
+        CLAUDE = ClaudeClient(
+            json_schema=RECIPE_LINKS_SCHEMA
+        )
     else:
         print("[startup] ClaudeClient unavailable; skipping LLM initialization.")
 
@@ -172,10 +174,13 @@ def _lookup_title_desc(video_id: str) -> Dict[str, str]:
 
 def _prompt_for_recipes(title: str, description: str) -> str:
     prompt = (
-        "Find three high-quality cooking recipe pages for the most likely dish.\n"
+        "Find up to three high-quality cooking recipe pages for the most likely dish.\n"
         f"Video title: {title or 'N/A'}\n"
         f"Video description: {description or 'N/A'}\n"
-        "Prefer reputable food sites and original sources."
+        "Prefer reputable food sites and original sources.\n"
+        "Return JSON only as an array (max 3). Each item is an object with keys:\n"
+        "  - title: string\n"
+        "  - link: string URL\n"
     )
     print(f"[recipes:_prompt_for_recipes] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
     return prompt
@@ -183,27 +188,43 @@ def _prompt_for_recipes(title: str, description: str) -> str:
 
 def _ask_web(prompt: str) -> str:
     """
-    Placeholder call. No JSON enforcement. Returns raw text.
-    Uses CLAUDE.ASK_WEB_ENFORECE_JSON if available, else a static fallback.
+    Prefer Claude web tools + JSON slice. Returns minified JSON or text fallback.
     """
     if CLAUDE is None:
         print("[recipes:_ask_web] CLAUDE is None. Returning placeholder text.")
         return "No LLM configured."
     try:
-        # Placeholder per request
-        if hasattr(CLAUDE, "ASK_WEB_ENFORECE_JSON"):
-            print("[recipes:_ask_web] calling CLAUDE.ASK_WEB_ENFORECE_JSON(prompt)")
-            return CLAUDE.ASK_WEB_ENFORECE_JSON(prompt)  # type: ignore[attr-defined]
-        # Common lowercase variant if present
         if hasattr(CLAUDE, "ask_web_enforce_json"):
             print("[recipes:_ask_web] calling CLAUDE.ask_web_enforce_json(prompt)")
             return CLAUDE.ask_web_enforce_json(prompt)  # type: ignore[attr-defined]
+        if hasattr(CLAUDE, "ask_web"):
+            print("[recipes:_ask_web] calling CLAUDE.ask_web(prompt)")
+            return CLAUDE.ask_web(prompt)  # type: ignore[attr-defined]
         print("[recipes:_ask_web] No matching method on CLAUDE. Returning placeholder text.")
         return "LLM method missing."
     except Exception as e:
         print(f"[recipes:_ask_web] EXCEPTION: {e}")
         traceback.print_exc()
         return "LLM call failed."
+
+
+def _parse_recipe_links_json(s: str) -> List[Link]:
+    try:
+        obj = json.loads(s)
+    except Exception:
+        return []
+    if not isinstance(obj, list):
+        return []
+    links: List[Link] = []
+    for it in obj[:3]:
+        if not isinstance(it, dict):
+            continue
+        title = str(it.get("title") or "").strip()
+        # schema uses "link"; accept "url" as fallback
+        url = str(it.get("link") or it.get("url") or "").strip()
+        if title and url:
+            links.append(Link(title=title, url=url))
+    return links
 
 
 def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_override: Optional[str] = None) -> RecipeLinksResult:
@@ -221,9 +242,8 @@ def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_over
     prompt = _prompt_for_recipes(title, desc)
     raw_text = _ask_web(prompt)
 
-    # No JSON parsing. Return raw text in 'query', empty links list.
-    q = raw_text if raw_text else (title or desc or "N/A")
-    links: List[Link] = []
+    links = _parse_recipe_links_json(raw_text)
+    q = title or desc or "N/A"
 
     print(f"[recipes:_core] built query text len={len(q)} links_count={len(links)}")
     result = RecipeLinksResult(video_id=video_id, query=q, links=links)

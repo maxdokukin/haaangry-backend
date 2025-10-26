@@ -21,7 +21,6 @@ class ClaudeClient:
 
     def __init__(
         self,
-        prompt: str = "Hello AI",
         model: str = "claude-haiku-4-5",
         json_schema: Optional[Dict[str, Any]] = None,
         api_key: Optional[str] = None,
@@ -29,7 +28,6 @@ class ClaudeClient:
         max_tokens: int = 1024,
         temperature: float = 0.0,
     ):
-        self.prompt = prompt
         self.model = model
         self.json_schema = json_schema
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")

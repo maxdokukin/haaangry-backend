@@ -1,7 +1,6 @@
 # app/main.py
 from typing import List, Dict, Optional
 from pathlib import Path
-import json
 import os
 import traceback
 from urllib.parse import unquote, parse_qs
@@ -21,14 +20,13 @@ from .schemas import (
     Link,
 )
 from . import config
-    # noqa: E402
 from . import data_loader
 from .mock_data import options_for
 
-# Claude client
+# Claude client (optional)
 try:
     from .src.Claude import ClaudeClient  # requires ANTHROPIC_API_KEY in env
-except Exception as e:  # import-safe fallback
+except Exception as e:
     print(f"[startup] Claude import failed: {e}")
     traceback.print_exc()
     ClaudeClient = None  # type: ignore
@@ -85,8 +83,7 @@ def startup():
             key_present = bool(os.environ.get("ANTHROPIC_API_KEY"))
             print(f"[startup] ANTHROPIC_API_KEY present={key_present}")
             CLAUDE = ClaudeClient()
-            # type: ignore[attr-defined]
-            print(f"[startup] Claude initialized. model={getattr(CLAUDE, 'model', 'unknown')} max_tokens={getattr(CLAUDE, 'max_tokens', 'unknown')}")
+            print(f"[startup] Claude initialized.")
         except Exception as e:
             print(f"[startup] Claude init failed: {e}")
             traceback.print_exc()
@@ -174,97 +171,39 @@ def _lookup_title_desc(video_id: str) -> Dict[str, str]:
 
 
 def _prompt_for_recipes(title: str, description: str) -> str:
-    """
-    New required LLM output format:
-    A JSON array with EXACTLY 3 objects. No markdown. No commentary.
-    Each object has:
-      - DESCRIPTION: short text for the recipe link
-      - LINK: absolute http(s) URL
-    Example:
-    [
-      {"DESCRIPTION": "Classic spaghetti carbonara", "LINK": "https://example.com/a"},
-      {"DESCRIPTION": "Serious Eats carbonara", "LINK": "https://example.com/b"},
-      {"DESCRIPTION": "Bon Appétit carbonara", "LINK": "https://example.com/c"}
-    ]
-    """
     prompt = (
-        "You are an assistant that finds cooking recipes on the web.\n"
+        "Find three high-quality cooking recipe pages for the most likely dish.\n"
         f"Video title: {title or 'N/A'}\n"
-        f"Video description: {description or 'N/A'}\n\n"
-        "Task: Search the public web for EXACTLY 3 high-quality recipe pages that match the most likely dish.\n"
-        "Prefer reputable food sites and original sources. Avoid spam and video-only pages.\n"
-        "Respond with JSON ONLY. No markdown. No commentary. Output must be an array of 3 objects with keys DESCRIPTION and LINK.\n"
-        'Return format:\n'
-        '[{"DESCRIPTION":"string","LINK":"https://..."}, {"DESCRIPTION":"string","LINK":"https://..."}, {"DESCRIPTION":"string","LINK":"https://..."}]\n'
-        "Ensure absolute HTTP(S) URLs."
+        f"Video description: {description or 'N/A'}\n"
+        "Prefer reputable food sites and original sources."
     )
     print(f"[recipes:_prompt_for_recipes] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
     return prompt
 
 
-def _call_claude(prompt: str) -> Dict:
+def _ask_web(prompt: str) -> str:
     """
-    Calls Claude and parses the new [{DESCRIPTION, LINK} * 3] JSON.
-    Tolerates lower/upper case keys. Validates http(s) scheme. Trims to 3.
-    Falls back to old shape if encountered.
+    Placeholder call. No JSON enforcement. Returns raw text.
+    Uses CLAUDE.ASK_WEB_ENFORECE_JSON if available, else a static fallback.
     """
     if CLAUDE is None:
-        print("[recipes:_call_claude] CLAUDE is None. Returning empty links.")
-        return {"links": []}
+        print("[recipes:_ask_web] CLAUDE is None. Returning placeholder text.")
+        return "No LLM configured."
     try:
-        print(f"[recipes:_call_claude] calling Claude.ask_with_web_json prompt_len={len(prompt)} model={getattr(CLAUDE, 'model', 'unknown')}")
-
-        txt = CLAUDE.ask_with_web_json(prompt)
-        print(f"[recipes:_call_claude] raw_text_len={len(txt)} preview='{_short(txt, 200)}'")
-        data = json.loads(txt)
-
-        def _coerce_list_payload(obj) -> List[Dict[str, str]]:
-            out: List[Dict[str, str]] = []
-            if not isinstance(obj, list):
-                return out
-            for it in obj:
-                if not isinstance(it, dict):
-                    continue
-                # Case-insensitive keys
-                # Accept DESCRIPTION/description and LINK/link
-                desc = it.get("DESCRIPTION") or it.get("description") or it.get("Description") or ""
-                link = it.get("LINK") or it.get("link") or it.get("Url") or it.get("URL") or ""
-                d = str(desc).strip()
-                u = str(link).strip()
-                if d and u and u.startswith(("http://", "https://")):
-                    out.append({"title": d, "url": u})
-            return out
-
-        links: List[Dict[str, str]] = []
-
-        # New format first
-        links = _coerce_list_payload(data)
-
-        # Fallback: old {"links":[{"title","url"}]} or list of {"title","url"}
-        if not links:
-            if isinstance(data, dict) and isinstance(data.get("links"), list):
-                for it in data["links"]:
-                    if isinstance(it, dict):
-                        t = str(it.get("title") or "").strip()
-                        u = str(it.get("url") or "").strip()
-                        if t and u and u.startswith(("http://", "https://")):
-                            links.append({"title": t, "url": u})
-            elif isinstance(data, list):
-                for it in data:
-                    if isinstance(it, dict):
-                        t = str(it.get("title") or "").strip()
-                        u = str(it.get("url") or "").strip()
-                        if t and u and u.startswith(("http://", "https://")):
-                            links.append({"title": t, "url": u})
-
-        # Enforce at most 3
-        links = links[:3]
-        print(f"[recipes:_call_claude] parsed links count={len(links)}")
-        return {"links": links}
+        # Placeholder per request
+        if hasattr(CLAUDE, "ASK_WEB_ENFORECE_JSON"):
+            print("[recipes:_ask_web] calling CLAUDE.ASK_WEB_ENFORECE_JSON(prompt)")
+            return CLAUDE.ASK_WEB_ENFORECE_JSON(prompt)  # type: ignore[attr-defined]
+        # Common lowercase variant if present
+        if hasattr(CLAUDE, "ask_web_enforce_json"):
+            print("[recipes:_ask_web] calling CLAUDE.ask_web_enforce_json(prompt)")
+            return CLAUDE.ask_web_enforce_json(prompt)  # type: ignore[attr-defined]
+        print("[recipes:_ask_web] No matching method on CLAUDE. Returning placeholder text.")
+        return "LLM method missing."
     except Exception as e:
-        print(f"[recipes:_call_claude] EXCEPTION: {e}")
+        print(f"[recipes:_ask_web] EXCEPTION: {e}")
         traceback.print_exc()
-        return {"links": []}
+        return "LLM call failed."
 
 
 def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_override: Optional[str] = None) -> RecipeLinksResult:
@@ -280,13 +219,14 @@ def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_over
         print(f"[recipes:_core] Using overrides. title='{_short(title)}' desc_len={len(desc)}")
 
     prompt = _prompt_for_recipes(title, desc)
-    payload = _call_claude(prompt)
-    links = [Link(**it) for it in payload.get("links", []) if isinstance(it, dict)]
-    q = title
-    if desc:
-        q = f"{q} — {desc}" if q else desc
-    print(f"[recipes:_core] built query='{_short(q)}' links_count={len(links)}")
-    result = RecipeLinksResult(video_id=video_id, query=q or "N/A", links=links)
+    raw_text = _ask_web(prompt)
+
+    # No JSON parsing. Return raw text in 'query', empty links list.
+    q = raw_text if raw_text else (title or desc or "N/A")
+    links: List[Link] = []
+
+    print(f"[recipes:_core] built query text len={len(q)} links_count={len(links)}")
+    result = RecipeLinksResult(video_id=video_id, query=q, links=links)
     print(f"[recipes:_core] returning RecipeLinksResult(video_id={result.video_id}, links={len(result.links)})")
     return result
 

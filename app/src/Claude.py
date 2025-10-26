@@ -3,6 +3,7 @@ import os
 from typing import Optional, List
 from dotenv import load_dotenv
 import anthropic
+import json
 
 load_dotenv()
 
@@ -42,7 +43,7 @@ class ClaudeClient:
         )
         return self._combine_text(resp)
 
-    def ask_with_web(self, prompt: str) -> str:
+    def ask_with_web_json(self, prompt: str) -> str:
         """
         Uses Anthropic's server tools:
         - web_search_20250305
@@ -53,17 +54,13 @@ class ClaudeClient:
             {
                 "type": "web_search_20250305",
                 "name": "web_search",
-                "max_uses": 5,
-                # optional: "allowed_domains": ["example.com"], "blocked_domains": [...]
-                # optional: "user_location": {"type":"approximate","city":"San Francisco","region":"California","country":"US","timezone":"America/Los_Angeles"}
+                "max_uses": 2,
             },
             {
                 "type": "web_fetch_20250910",
                 "name": "web_fetch",
-                "max_uses": 5,
+                "max_uses": 2,
                 "citations": {"enabled": True},
-                # optional: "allowed_domains": ["example.com"], "blocked_domains": [...]
-                # optional: "max_content_tokens": 100000
             },
         ]
 
@@ -71,12 +68,31 @@ class ClaudeClient:
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
+            system=(
+                "Your task is to take the information provided and convert it into a well-organized JSON format. "
+                "Identify the main entities, attributes, or categories and use them as keys in the JSON object. "
+                "Ensure that the data is accurately represented and properly formatted within the JSON structure."
+            ),
             messages=[{"role": "user", "content": prompt}],
             tools=tools,
-            # Required for web_fetch beta per docs
             extra_headers={"anthropic-beta": "web-fetch-2025-09-10"},
         )
-        return self._combine_text(resp)
+
+        text = self._combine_text(resp)
+
+        # Keep only JSON: remove everything before first '{' and after last '}'
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            return ""
+
+        json_str = text[start: end + 1].strip()
+
+        # Normalize if possible; else return the raw slice
+        try:
+            return json.dumps(json.loads(json_str), ensure_ascii=False)
+        except Exception:
+            return json_str
 
     # ---------- Internals ----------
 

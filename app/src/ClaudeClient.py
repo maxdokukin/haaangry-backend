@@ -105,7 +105,9 @@ class ClaudeClient:
             ),
             messages=[{"role": "user", "content": p}],
         )
-        return self._extract_minified_json(self._combine_text(resp))
+        print("CLAUDE OUT ", self._extract_minified_json(self._combine_text(resp)))
+
+        return "[" + self._extract_minified_json(self._combine_text(resp)) + "]"
 
     def ask_web_enforce_json(self, prompt: Optional[str] = None) -> str:
         """

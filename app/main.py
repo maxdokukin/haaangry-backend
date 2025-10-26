@@ -232,8 +232,8 @@ def _recipes_core(
 
     # Flatten and tag. Keep original order: all articles first, then videos.
     flattened_links = (
-        [{"title": it.title, "url": it.url, "kind": "article"} for it in article_links] +
-        [{"title": it.title, "url": it.url, "kind": "video"} for it in video_links]
+        [{"title": "Read: " + it.title, "url": it.url, "kind": "article"} for it in article_links] +
+        [{"title": "Watch: " + it.title, "url": it.url, "kind": "video"} for it in video_links]
     )
 
     query_text = title or description or "N/A"

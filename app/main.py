@@ -21,6 +21,7 @@ from .schemas import (
     Link,
 )
 from . import config
+    # noqa: E402
 from . import data_loader
 from .mock_data import options_for
 
@@ -119,7 +120,7 @@ def order_options(video_id: str = Query(...), title: str | None = None) -> Order
 
 
 # Compatibility for clients that mistakenly URL-encode the "?" into the path.
-@app.get("/order/options{rest:path}", response_model=OrderOptions)
+@app.get("/order/options/{rest:path}", response_model=OrderOptions)
 def order_options_compat(rest: str, title: str | None = None) -> OrderOptions:
     print(f"[/order/options compat] rest='{rest}' title_override={bool(title)}")
     q = unquote(rest.lstrip("/"))
@@ -173,21 +174,40 @@ def _lookup_title_desc(video_id: str) -> Dict[str, str]:
 
 
 def _prompt_for_recipes(title: str, description: str) -> str:
+    """
+    New required LLM output format:
+    A JSON array with EXACTLY 3 objects. No markdown. No commentary.
+    Each object has:
+      - DESCRIPTION: short text for the recipe link
+      - LINK: absolute http(s) URL
+    Example:
+    [
+      {"DESCRIPTION": "Classic spaghetti carbonara", "LINK": "https://example.com/a"},
+      {"DESCRIPTION": "Serious Eats carbonara", "LINK": "https://example.com/b"},
+      {"DESCRIPTION": "Bon Appétit carbonara", "LINK": "https://example.com/c"}
+    ]
+    """
     prompt = (
         "You are an assistant that finds cooking recipes on the web.\n"
         f"Video title: {title or 'N/A'}\n"
         f"Video description: {description or 'N/A'}\n\n"
-        "Task: Search the public web for 3 high-quality recipe pages that match the most likely dish.\n"
+        "Task: Search the public web for EXACTLY 3 high-quality recipe pages that match the most likely dish.\n"
         "Prefer reputable food sites and original sources. Avoid spam and video-only pages.\n"
-        "YOUR RESPONSE MUST BE THE VALID JSON AND NOTHING ELSE. NO COMMENTS JUST STRAIGHT UP JSON:\n"
-        '{\n  "links": [ {"title": "string", "url": "https://..."} ]\n}\n'
-        "No markdown. No commentary. Ensure absolute HTTP(S) URLs."
+        "Respond with JSON ONLY. No markdown. No commentary. Output must be an array of 3 objects with keys DESCRIPTION and LINK.\n"
+        'Return format:\n'
+        '[{"DESCRIPTION":"string","LINK":"https://..."}, {"DESCRIPTION":"string","LINK":"https://..."}, {"DESCRIPTION":"string","LINK":"https://..."}]\n'
+        "Ensure absolute HTTP(S) URLs."
     )
     print(f"[recipes:_prompt_for_recipes] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
     return prompt
 
 
 def _call_claude(prompt: str) -> Dict:
+    """
+    Calls Claude and parses the new [{DESCRIPTION, LINK} * 3] JSON.
+    Tolerates lower/upper case keys. Validates http(s) scheme. Trims to 3.
+    Falls back to old shape if encountered.
+    """
     if CLAUDE is None:
         print("[recipes:_call_claude] CLAUDE is None. Returning empty links.")
         return {"links": []}
@@ -195,30 +215,52 @@ def _call_claude(prompt: str) -> Dict:
         print(f"[recipes:_call_claude] calling Claude.ask_with_web_json prompt_len={len(prompt)} model={getattr(CLAUDE, 'model', 'unknown')}")
 
         txt = CLAUDE.ask_with_web_json(prompt)
-        print(f"[recipes:_call_claude] raw_text_len={len(txt)} preview='{txt}'")
+        print(f"[recipes:_call_claude] raw_text_len={len(txt)} preview='{_short(txt, 200)}'")
         data = json.loads(txt)
-        if isinstance(data, dict) and isinstance(data.get("links"), list):
-            clean = []
-            for it in data["links"]:
-                if isinstance(it, dict):
-                    t = str(it.get("title") or "").strip()
-                    u = str(it.get("url") or "").strip()
-                    if t and u and u.startswith(("http://", "https://")):
-                        clean.append({"title": t, "url": u})
-            print(f"[recipes:_call_claude] parsed dict links count={len(clean)}")
-            return {"links": clean}
-        if isinstance(data, list):
-            clean = []
-            for it in data:
-                if isinstance(it, dict):
-                    t = str(it.get("title") or "").strip()
-                    u = str(it.get("url") or "").strip()
-                    if t and u and u.startswith(("http://", "https://")):
-                        clean.append({"title": t, "url": u})
-            print(f"[recipes:_call_claude] parsed list links count={len(clean)}")
-            return {"links": clean}
-        print("[recipes:_call_claude] unexpected JSON shape. Returning empty links.")
-        return {"links": []}
+
+        def _coerce_list_payload(obj) -> List[Dict[str, str]]:
+            out: List[Dict[str, str]] = []
+            if not isinstance(obj, list):
+                return out
+            for it in obj:
+                if not isinstance(it, dict):
+                    continue
+                # Case-insensitive keys
+                # Accept DESCRIPTION/description and LINK/link
+                desc = it.get("DESCRIPTION") or it.get("description") or it.get("Description") or ""
+                link = it.get("LINK") or it.get("link") or it.get("Url") or it.get("URL") or ""
+                d = str(desc).strip()
+                u = str(link).strip()
+                if d and u and u.startswith(("http://", "https://")):
+                    out.append({"title": d, "url": u})
+            return out
+
+        links: List[Dict[str, str]] = []
+
+        # New format first
+        links = _coerce_list_payload(data)
+
+        # Fallback: old {"links":[{"title","url"}]} or list of {"title","url"}
+        if not links:
+            if isinstance(data, dict) and isinstance(data.get("links"), list):
+                for it in data["links"]:
+                    if isinstance(it, dict):
+                        t = str(it.get("title") or "").strip()
+                        u = str(it.get("url") or "").strip()
+                        if t and u and u.startswith(("http://", "https://")):
+                            links.append({"title": t, "url": u})
+            elif isinstance(data, list):
+                for it in data:
+                    if isinstance(it, dict):
+                        t = str(it.get("title") or "").strip()
+                        u = str(it.get("url") or "").strip()
+                        if t and u and u.startswith(("http://", "https://")):
+                            links.append({"title": t, "url": u})
+
+        # Enforce at most 3
+        links = links[:3]
+        print(f"[recipes:_call_claude] parsed links count={len(links)}")
+        return {"links": links}
     except Exception as e:
         print(f"[recipes:_call_claude] EXCEPTION: {e}")
         traceback.print_exc()
@@ -262,7 +304,7 @@ def recipes(
 
 
 # Compatibility for encoded query sent in the path, e.g. /recipes%3Fvideo_id%3Dabc&title=...
-@app.get("/recipes{rest:path}", response_model=RecipeLinksResult)
+@app.get("/recipes/{rest:path}", response_model=RecipeLinksResult)
 def recipes_compat(rest: str) -> RecipeLinksResult:
     print(f"[/recipes compat] rest='{rest}'")
     q = unquote(rest.lstrip("/"))

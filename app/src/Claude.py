@@ -87,7 +87,7 @@ class ClaudeClient:
             return ""
 
         json_str = text[start: end + 1].strip()
-
+        print("CLAUDE SAID ", json_str)
         # Normalize if possible; else return the raw slice
         try:
             return json.dumps(json.loads(json_str), ensure_ascii=False)

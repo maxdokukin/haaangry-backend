@@ -87,6 +87,7 @@ class Profile(BaseModel):
 class RestaurantBlock(BaseModel):
     restaurant_id: str
     restaurant_name: str
+    menu_url: str
     items: List[MenuItem]
     avg_price_cents: int
 

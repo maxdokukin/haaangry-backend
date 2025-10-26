@@ -5,6 +5,7 @@ import os
 import json
 import traceback
 from urllib.parse import unquote, parse_qs
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -158,6 +159,21 @@ def _prompt_for_recipes(title: str, description: str) -> str:
     print(f"[recipes:_prompt_for_recipes] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
     return prompt
 
+
+def _prompt_for_recipes_videos(title: str, description: str) -> str:
+    prompt = (
+        "Find up to three high-quality cooking recipe youtube videos for the most likely dish.\n"
+        f"Root Video title: {title or 'N/A'}\n"
+        f"Root Video description: {description or 'N/A'}\n"
+        "Prefer reputable authors.\n"
+        "Return JSON only as an array (max 3). Each item is an object with keys:\n"
+        "  - title: string\n"
+        "  - link: string URL\n"
+    )
+    print(f"[recipes:_prompt_for_recipes_videos] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
+    return prompt
+
+
 def _parse_recipe_links_json(s: str) -> List[Link]:
     try:
         obj = json.loads(s)
@@ -177,35 +193,59 @@ def _parse_recipe_links_json(s: str) -> List[Link]:
     return links
 
 
-def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_override: Optional[str] = None) -> RecipeLinksResult:
+def _recipes_core(
+    video_id: str,
+    title_override: Optional[str] = None,
+    desc_override: Optional[str] = None,
+) -> RecipeLinksResult:
     print(f"[recipes:_core] video_id={video_id} title_override_set={bool(title_override)} desc_override_set={bool(desc_override)}")
+
     title = (title_override or "").strip()
-    desc = (desc_override or "").strip()
-    if not title and not desc:
+    description = (desc_override or "").strip()
+
+    if not title and not description:
         print("[recipes:_core] No overrides provided. Falling back to _lookup_title_desc.")
         meta = _lookup_title_desc(video_id)
         title = meta["title"].strip()
-        desc = meta["description"].strip()
+        description = meta["description"].strip()
     else:
-        print(f"[recipes:_core] Using overrides. title='{_short(title)}' desc_len={len(desc)}")
+        print(f"[recipes:_core] Using overrides. title='{_short(title)}' desc_len={len(description)}")
 
-    prompt = _prompt_for_recipes(title, desc)
-    rec_links_fetcher = ClaudeClient(
-        json_schema="""[ {label: "Super delicios cake", "link": "https://..."}, ... ]"""
+    articles_prompt = _prompt_for_recipes(title, description)
+    videos_prompt = _prompt_for_recipes_videos(title, description)
+
+    articles_client = ClaudeClient(
+        json_schema='[{"title": "Example", "link": "https://..."}]'
     )
-    raw_text = rec_links_fetcher.ask_web_enforce_json(prompt)
+    videos_client = ClaudeClient(
+        json_schema='[{"title": "Example", "link": "https://youtube.com/..."}]'
+    )
 
-    links = _parse_recipe_links_json(raw_text)
-    q = title or desc or "N/A"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_articles = pool.submit(articles_client.ask_web_enforce_json, articles_prompt)
+        fut_videos = pool.submit(videos_client.ask_web_enforce_json, videos_prompt)
+        raw_articles = fut_articles.result()
+        raw_videos = fut_videos.result()
 
-    print(f"[recipes:_core] built query text len={len(q)} links_count={len(links)}")
-    result = RecipeLinksResult(video_id=video_id, query=q, links=links)
+    article_links = _parse_recipe_links_json(raw_articles)  # List[Link]
+    video_links = _parse_recipe_links_json(raw_videos)      # List[Link]
+
+    # Flatten and tag. Keep original order: all articles first, then videos.
+    flattened_links = (
+        [{"title": it.title, "url": it.url, "kind": "article"} for it in article_links] +
+        [{"title": it.title, "url": it.url, "kind": "video"} for it in video_links]
+    )
+
+    query_text = title or description or "N/A"
+    print(f"[recipes:_core] built query text len={len(query_text)} articles_count={len(article_links)} videos_count={len(video_links)} total={len(flattened_links)}")
+
+    result = RecipeLinksResult(video_id=video_id, query=query_text, links=flattened_links)
     print(f"[recipes:_core] returning RecipeLinksResult(video_id={result.video_id}, links={len(result.links)})")
+    print(f"[recipes:_core] SENT TO FRONT END", result)
+
     return result
 
-# @app.get("/recipes", response_model=RecipeLinksResult)
-# def recipes(video_id: str = Query(...), title: str | None = None, description: str | None = None) -> RecipeLinksResult:
-#     return _recipes_core(video_id, title_override=title, desc_override=description)
+
 
 @app.get("/recipes/{rest:path}", response_model=RecipeLinksResult)
 def recipes_compat(rest: str, request: Request) -> RecipeLinksResult:

@@ -1,3 +1,4 @@
+# app/schemas.py
 from typing import List, Optional
 from pydantic import BaseModel
 
@@ -54,14 +55,18 @@ class OrderOptions(BaseModel):
     prefill: List[OrderItem]
     suggested_items: List[MenuItem]
 
-class TextRecipe(BaseModel):
-    title: str
-    steps: List[str]
+# ---- New recipe search models ----
 
-class RecipeResult(BaseModel):
+class Link(BaseModel):
+    title: str
+    url: str
+
+class RecipeLinksResult(BaseModel):
     video_id: str
-    top_text_recipes: List[TextRecipe]
-    top_youtube: List[str]
+    query: str
+    links: List[Link]
+
+# ---- LLM request models ----
 
 class LLMTextReq(BaseModel):
     user_text: str

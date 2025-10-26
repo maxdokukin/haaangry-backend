@@ -440,10 +440,11 @@ def recommend_api(body: SCH.RecommendIn):
         blocks.append(SCH.RestaurantBlock(
             restaurant_id=rid,
             restaurant_name=_REST_BY_ID[rid].get("name") or rid,
-            menu_url=_REST_BY_ID[rid].get("menu_url") or "",
+            menu_url=_REST_BY_ID[rid].get("menu_url"),
             items=items,
-            avg_price_cents=avg_cents or 0
+            avg_price_cents=avg_cents
         ))
+
 
     try:
         out = SCH.RecommendOut(recommendations=blocks)

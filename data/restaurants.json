@@ -1,0 +1,154 @@
+{
+  "restaurants": [
+    {
+      "name": "Il Fornaio - San Jose",
+      "id": "ilfornaio_sanjose",
+      "address": "The Westin San Jose, 302 S Market St, San Jose, CA 95113",
+      "phone": "(408) 271-3366",
+      "website": "https://www.ilfornaio.com/location/il-fornaio-san-jose/",
+      "menu_url": "https://www.ilfornaio.com/san-jose-menus/",
+      "menu": [
+        { "name": "Tagliatelle Bolognese", "price": 24.00, "tags": ["italian","pasta","bolognese","beef","pork","tomato"] },
+        { "name": "Rigatoni alla Vodka", "price": 23.00, "tags": ["italian","pasta","vodka","tomato","cream"] },
+        { "name": "Lasagna Ferrarese", "price": 28.00, "tags": ["italian","pasta","lasagna","meat","tomato","béchamel"] },
+        { "name": "Gnocchi al Pesto Arlecchino", "price": 27.00, "tags": ["italian","gnocchi","pesto","vegetarian"] },
+        { "name": "Linguine Mare Chiaro", "price": 33.00, "tags": ["italian","seafood","linguine","clam","mussel","shrimp"] }
+      ]
+    },
+    {
+      "name": "Pizza My Heart - Downtown San Jose",
+      "id": "pizzamyheart_sanjose_e_san_carlos",
+      "address": "117 E San Carlos St, San Jose, CA 95112",
+      "phone": "(408) 280-0707",
+      "website": "https://www.pizzamyheart.com/location/pizza-my-heart-san-jose-downtown/",
+      "menu_url": "https://www.pizzamyheart.com/menu/",
+      "menu": [
+        { "name": "Big Sur 12\"", "price": 25.50, "tags": ["pizza","garlic","pepperoni","sausage","mushroom"] },
+        { "name": "Maui Wowie 12\"", "price": 22.50, "tags": ["pizza","canadian bacon","pineapple"] },
+        { "name": "Cowell’s Combo 12\"", "price": 25.50, "tags": ["pizza","pepperoni","sausage","olives","mushrooms","onions","bell peppers"] },
+        { "name": "Cheese 12\"", "price": 19.50, "tags": ["pizza","cheese","vegetarian"] },
+        { "name": "Pesto 12\"", "price": 22.50, "tags": ["pizza","pesto","vegetarian","nuts"] }
+      ]
+    },
+    {
+      "name": "Back A Yard Caribbean Grill - Downtown San Jose",
+      "id": "backayard_downtown_sj",
+      "address": "457 E San Carlos St, San Jose, CA 95112",
+      "phone": "(408) 217-9443",
+      "website": "https://backayard.net/restaurantmenu/",
+      "menu_url": "https://sjdowntown.backayardcaribbeangrill.com/",
+      "menu": [
+        { "name": "Jerk Chicken", "price": 13.45, "tags": ["caribbean","jamaican","jerk","chicken","spicy"] },
+        { "name": "Beef Oxtails", "price": 22.95, "tags": ["caribbean","oxtail","stew"] },
+        { "name": "Jerk Salmon Filet", "price": 17.45, "tags": ["caribbean","jerk","salmon","spicy"] },
+        { "name": "Curry Goat", "price": 16.95, "tags": ["caribbean","goat","curry","spicy"] },
+        { "name": "Jerk Pork", "price": 14.95, "tags": ["caribbean","jerk","pork","spicy"] }
+      ]
+    },
+    {
+      "name": "The Farmers Union",
+      "id": "farmers_union_sanjose",
+      "address": "151 W Santa Clara St, San Jose, CA 95113",
+      "phone": "(408) 277-0545",
+      "website": "https://thefarmersunion.com/",
+      "menu_url": "https://thefarmersunion.com/san-jose-the-farmers-union-food-menu",
+      "menu": [
+        { "name": "Cheddar Biscuits", "price": 10.00, "tags": ["american","biscuit","starter","vegetarian"] },
+        { "name": "Chicken Wings", "price": 16.00, "tags": ["american","wings","buffalo","spicy"] },
+        { "name": "Buttermilk Fried Smoked Pork Ribs", "price": 17.00, "tags": ["american","bbq","pork","fried"] },
+        { "name": "Pan Roasted Salmon", "price": 34.00, "tags": ["seafood","salmon","gluten-free"] },
+        { "name": "Grass Fed Burger", "price": 22.00, "tags": ["burger","beef","american"] }
+      ]
+    },
+    {
+      "name": "Original Joe’s - San Jose",
+      "id": "original_joes_sanjose",
+      "address": "301 S First St, San Jose, CA 95113",
+      "phone": "(408) 292-7030",
+      "website": "https://www.originaljoes.com/san-jose",
+      "menu_url": "https://original-joes-san-jose.res-menu.com/menu",
+      "menu": [
+        { "name": "Spaghetti & Meatballs", "price": 22.50, "tags": ["italian-american","pasta","beef","tomato"] },
+        { "name": "Chicken Parmigiana", "price": 28.95, "tags": ["italian-american","chicken","cutlet","cheese","tomato"] },
+        { "name": "Joe’s Special", "price": 21.95, "tags": ["house-specialty","beef","spinach","egg","onion"] },
+        { "name": "Eggplant Parmigiana", "price": 23.95, "tags": ["italian-american","vegetarian","eggplant","cheese","tomato"] },
+        { "name": "Minestrone Soup", "price": 9.95, "tags": ["soup","vegetarian"] }
+      ]
+    },
+    {
+      "name": "The Old Spaghetti Factory - San Jose",
+      "id": "old_spaghetti_factory_sanjose",
+      "address": "51 N San Pedro St, San Jose, CA 95110",
+      "phone": "(408) 288-7488",
+      "website": "https://www.osf.com/location/san-jose-ca/",
+      "menu_url": "https://www.allmenus.com/ca/san-jose/5426-the-old-spaghetti-factory/menu/",
+      "menu": [
+        { "name": "Mizithra Cheese & Browned Butter", "price": 21.00, "tags": ["italian","pasta","vegetarian","mizithra"] },
+        { "name": "Manager’s Favorite (2 Sauces)", "price": 20.50, "tags": ["italian","pasta","custom"] },
+        { "name": "Spaghetti with Rich Meat Sauce", "price": 19.00, "tags": ["italian","pasta","beef","tomato"] },
+        { "name": "Chicken Parmigiana", "price": 23.00, "tags": ["italian","chicken","tomato","cheese","fried"] },
+        { "name": "Baked Lasagna", "price": 21.50, "tags": ["italian","pasta","lasagna","beef","cheese"] }
+      ]
+    },
+    {
+      "name": "The Grill on the Alley",
+      "id": "grill_on_the_alley_sanjose",
+      "address": "172 S Market St, San Jose, CA 95113",
+      "phone": "(408) 294-2244",
+      "website": "https://www.thegrill.com/",
+      "menu_url": "https://www.allmenus.com/ca/san-jose/22258-the-grill-on-the-alley/menu/",
+      "menu": [
+        { "name": "Jumbo Shrimp Cocktail", "price": 26.00, "tags": ["seafood","appetizer","shrimp"] },
+        { "name": "French Onion Soup", "price": 14.00, "tags": ["soup","onion","gruyere"] },
+        { "name": "Filet Mignon Salad", "price": 34.50, "tags": ["salad","beef","steak","greens"] },
+        { "name": "Chop House Cheeseburger", "price": 22.00, "tags": ["burger","beef","american","cheddar"] },
+        { "name": "Grilled Shrimp Pomodoro", "price": 40.00, "tags": ["seafood","pasta","shrimp","tomato"] }
+      ]
+    },
+    {
+      "name": "Pizza Flora",
+      "id": "pizza_flora_sanjose",
+      "address": "78 S 1st St, San Jose, CA 95113",
+      "phone": "(408) 560-5065",
+      "website": "http://pizzaflorasj.com/",
+      "menu_url": "https://pizzaflora.revelup.com",
+      "menu": [
+        { "name": "Margherita 12\"", "price": 21.00, "tags": ["pizza","tomato","mozzarella","basil","vegetarian"] },
+        { "name": "Forest Mushroom 12\"", "price": 25.00, "tags": ["pizza","mushroom","vegetarian"] },
+        { "name": "Pesto 12\"", "price": 24.00, "tags": ["pizza","pesto","vegetarian","nuts"] },
+        { "name": "Pepperoni 12\"", "price": 24.00, "tags": ["pizza","pepperoni"] },
+        { "name": "Cheese Slice", "price": 5.25, "tags": ["pizza","slice","vegetarian"] }
+      ]
+    },
+    {
+      "name": "La Victoria Taqueria – Downtown",
+      "id": "la_victoria_taqueria_santa_clara_st",
+      "address": "131 W Santa Clara St, San Jose, CA 95113",
+      "phone": "(408) 320-1595",
+      "website": "https://www.lavicsj.com/",
+      "menu_url": "https://wnam-cdn.menulist.menu/storage/media/companies_menu_pdf/114061220/la-victoria-taqueria-san-jose-menu.pdf",
+      "menu": [
+        { "name": "Regular Burrito Bowl", "price": 13.50, "tags": ["mexican","burrito bowl","rice","beans"] },
+        { "name": "Veggie Burrito Bowl", "price": 13.00, "tags": ["mexican","vegetarian","burrito bowl"] },
+        { "name": "Super Taco", "price": 6.00, "tags": ["mexican","taco"] },
+        { "name": "Bean & Cheese Burrito", "price": 6.00, "tags": ["mexican","burrito","vegetarian"] },
+        { "name": "Breakfast Torta", "price": 9.00, "tags": ["mexican","breakfast","torta","sandwich"] }
+      ]
+    },
+    {
+      "name": "Sushi Confidential – San Jose",
+      "id": "sushi_confidential_sanjose",
+      "address": "31 N Market St, San Jose, CA 95113",
+      "phone": "(408) 913-8080",
+      "website": "https://sushiconfidential.com/san-jose-location/",
+      "menu_url": "https://www.allmenus.com/ca/san-jose/697997-sushi-confidential/menu/",
+      "menu": [
+        { "name": "Tempura (Vegetable/Shrimp/Mixed)", "price": 9.00, "tags": ["japanese","fried","appetizer","shrimp","vegetable"] },
+        { "name": "California Roll", "price": 7.50, "tags": ["japanese","sushi","roll","crab","avocado"] },
+        { "name": "Spicy Tuna Roll", "price": 8.50, "tags": ["japanese","sushi","tuna","spicy"] },
+        { "name": "Dragon Roll", "price": 12.00, "tags": ["japanese","sushi","eel","avocado"] },
+        { "name": "Lion King Roll", "price": 13.50, "tags": ["japanese","sushi","salmon","baked"] }
+      ]
+    }
+  ]
+}

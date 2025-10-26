@@ -185,29 +185,6 @@ def _prompt_for_recipes(title: str, description: str) -> str:
     print(f"[recipes:_prompt_for_recipes] prompt_len={len(prompt)} preview='{_short(prompt, 200)}'")
     return prompt
 
-
-def _ask_web(prompt: str) -> str:
-    """
-    Prefer Claude web tools + JSON slice. Returns minified JSON or text fallback.
-    """
-    if CLAUDE is None:
-        print("[recipes:_ask_web] CLAUDE is None. Returning placeholder text.")
-        return "No LLM configured."
-    try:
-        if hasattr(CLAUDE, "ask_web_enforce_json"):
-            print("[recipes:_ask_web] calling CLAUDE.ask_web_enforce_json(prompt)")
-            return CLAUDE.ask_web_enforce_json(prompt)  # type: ignore[attr-defined]
-        if hasattr(CLAUDE, "ask_web"):
-            print("[recipes:_ask_web] calling CLAUDE.ask_web(prompt)")
-            return CLAUDE.ask_web(prompt)  # type: ignore[attr-defined]
-        print("[recipes:_ask_web] No matching method on CLAUDE. Returning placeholder text.")
-        return "LLM method missing."
-    except Exception as e:
-        print(f"[recipes:_ask_web] EXCEPTION: {e}")
-        traceback.print_exc()
-        return "LLM call failed."
-
-
 def _parse_recipe_links_json(s: str) -> List[Link]:
     try:
         obj = json.loads(s)
@@ -240,7 +217,7 @@ def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_over
         print(f"[recipes:_core] Using overrides. title='{_short(title)}' desc_len={len(desc)}")
 
     prompt = _prompt_for_recipes(title, desc)
-    raw_text = _ask_web(prompt)
+    raw_text = CLAUDE.ask_web_enforce_json(prompt)
 
     links = _parse_recipe_links_json(raw_text)
     q = title or desc or "N/A"
@@ -250,38 +227,31 @@ def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_over
     print(f"[recipes:_core] returning RecipeLinksResult(video_id={result.video_id}, links={len(result.links)})")
     return result
 
+# @app.get("/recipes", response_model=RecipeLinksResult)
+# def recipes(video_id: str = Query(...), title: str | None = None, description: str | None = None) -> RecipeLinksResult:
+#     return _recipes_core(video_id, title_override=title, desc_override=description)
 
-@app.get("/recipes", response_model=RecipeLinksResult)
-def recipes(
-    video_id: str = Query(...),
-    title: Optional[str] = None,
-    description: Optional[str] = None,
-) -> RecipeLinksResult:
-    print(f"[/recipes] GET video_id={video_id} title_set={bool(title)} description_len={len(description or '')}")
-    res = _recipes_core(video_id, title_override=title, desc_override=description)
-    print(f"[/recipes] DONE links={len(res.links)}")
-    return res
-
-
-# Compatibility for encoded query sent in the path, e.g. /recipes%3Fvideo_id%3Dabc&title=...
 @app.get("/recipes/{rest:path}", response_model=RecipeLinksResult)
-def recipes_compat(rest: str) -> RecipeLinksResult:
-    print(f"[/recipes compat] rest='{rest}'")
+def recipes_compat(rest: str, request: Request) -> RecipeLinksResult:
     q = unquote(rest.lstrip("/"))
-    print(f"[/recipes compat] unquoted='{q}'")
     if q.startswith("?"):
         q = q[1:]
     params = parse_qs(q)
     vid = (params.get("video_id") or [None])[0]
     title = (params.get("title") or [None])[0]
     description = (params.get("description") or [None])[0]
-    print(f"[/recipes compat] parsed video_id={vid} title_set={bool(title)} description_len={len(description or '')}")
+
     if not vid:
-        print("[/recipes compat] ERROR video_id missing")
+        qp = request.query_params
+        vid = qp.get("video_id")
+        title = title or qp.get("title")
+        description = description or qp.get("description")
+
+    if not vid:
         raise HTTPException(status_code=400, detail="video_id missing")
-    res = _recipes_core(vid, title_override=title, desc_override=description)
-    print(f"[/recipes compat] DONE links={len(res.links)}")
-    return res
+    output = _recipes_core(vid, title_override=title, desc_override=description)
+    print("SENT TO FRONT END: ", output)
+    return output
 
 
 @app.get("/profile", response_model=Profile)

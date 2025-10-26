@@ -113,6 +113,7 @@ class ClaudeClient:
         then minify. Adds strict instructions to avoid non-JSON output.
         """
         p = prompt if prompt is not None else self.prompt
+        print("CLAUDE IN ", prompt)
         schema = (
             self.json_schema
             if isinstance(self.json_schema, dict)
@@ -141,7 +142,8 @@ class ClaudeClient:
             tools=tools,
             extra_headers={"anthropic-beta": "web-fetch-2025-09-10"},
         )
-        return self._extract_minified_json(self._combine_text(resp))
+        print("CLAUDE OUT ", self._extract_minified_json(self._combine_text(resp)))
+        return "[" + self._extract_minified_json(self._combine_text(resp)) + "]"
 
     # ---------- Internals ----------
 

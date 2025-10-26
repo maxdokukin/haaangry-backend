@@ -212,9 +212,9 @@ def _call_claude(prompt: str) -> Dict:
         print("[recipes:_call_claude] CLAUDE is None. Returning empty links.")
         return {"links": []}
     try:
-        print(f"[recipes:_call_claude] calling Claude.ask_with_web_json prompt_len={len(prompt)} model={getattr(CLAUDE, 'model', 'unknown')}")
+        print(f"[recipes:_call_claude] calling Claude.ask_web_enforce_json prompt_len={len(prompt)} model={getattr(CLAUDE, 'model', 'unknown')}")
 
-        txt = CLAUDE.ask_with_web_json(prompt)
+        txt = CLAUDE.ask_web_enforce_json(prompt)
         print(f"[recipes:_call_claude] raw_text_len={len(txt)} preview='{_short(txt, 200)}'")
         data = json.loads(txt)
 
@@ -334,3 +334,246 @@ def profile() -> Profile:
 def orders_history() -> Dict[str, list]:
     print("[/orders/history] returning empty list")
     return {"orders": []}
+
+# =========================
+# == Recommendation flow ==
+# =========================
+from typing import Tuple
+from pydantic import ValidationError
+from . import schemas as SCH  # access newly added schemas without touching earlier import
+from pathlib import Path as _Path
+
+# Local restaurant catalog (loaded in a separate startup hook so we don't touch the existing one)
+_REST_CATALOG: dict = {}
+_REST_BY_ID: dict = {}
+
+def _slug(s: str) -> str:
+    return "".join(ch.lower() if ch.isalnum() else "-" for ch in (s or "")).strip("-")
+
+def _load_restaurants_json() -> dict:
+    root = _Path(__file__).resolve().parents[1]
+    p = root / "data" / "restaurants.json"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or "restaurants" not in data:
+            raise ValueError("restaurants.json missing 'restaurants' key")
+        return data
+    except Exception as e:
+        print(f"[recommendation] Failed to load restaurants.json: {e}")
+        return {"restaurants": []}
+
+@app.on_event("startup")
+def _startup_load_restaurants():
+    global _REST_CATALOG, _REST_BY_ID
+    _REST_CATALOG = _load_restaurants_json()
+    _REST_BY_ID = {r.get("id"): r for r in _REST_CATALOG.get("restaurants", []) if isinstance(r, dict) and r.get("id")}
+    print(f"[startup] Loaded restaurants.json count={len(_REST_BY_ID)}")
+
+def _lookup_video_meta(video_id: str) -> Tuple[str, str]:
+    # Reuse existing RAW_ITEMS
+    meta = _lookup_title_desc(video_id)
+    return meta.get("title", ""), meta.get("description", "")
+
+def _claude_schema_for_choice() -> dict:
+    # Compact schema for Claude → we convert to full objects later
+    return {
+        "type": "object",
+        "properties": {
+            "recommendations": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {"type": "string"},
+                        "item_names": {
+                            "type": "array",
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "required": ["restaurant_id", "item_names"]
+                }
+            }
+        },
+        "required": ["recommendations"]
+    }
+
+def _build_choice_prompt(title: str, description: str, catalog: dict) -> str:
+    # Pass only what's needed: ids, names, menus with name+price+tags to keep prompt small
+    minimal_catalog = {
+        "restaurants": [
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "menu": [
+                    {"name": m.get("name"), "price": m.get("price"), "tags": m.get("tags", [])}
+                    for m in (r.get("menu") or []) if isinstance(m, dict)
+                ],
+            }
+            for r in (catalog.get("restaurants") or []) if isinstance(r, dict)
+        ]
+    }
+    SYSTEM = (
+        "You pick restaurants and items from a provided catalog. "
+        "Goal: choose EXACTLY 3 restaurants most relevant to the video, and for each choose EXACTLY 3 item names "
+        "from that restaurant's menu that best match the video's content. "
+        "Return STRICT JSON using the provided tool schema. No prose."
+    )
+    user = (
+        f"VIDEO_TITLE: {title or 'N/A'}\n"
+        f"VIDEO_DESCRIPTION: {description or 'N/A'}\n\n"
+        f"CATALOG:\n{json.dumps(minimal_catalog, ensure_ascii=False)}"
+    )
+    # Use Claude JSON tool enforcement if available; we supply the schema at call time
+    return f"{SYSTEM}\n\n{user}"
+
+def _items_to_menu_models(restaurant_id: str, item_names: list[str]) -> Tuple[list[SCH.MenuItem], int]:
+    r = _REST_BY_ID.get(restaurant_id) or {}
+    menu = r.get("menu") or []
+    name_map = {str(m.get("name")).strip().lower(): m for m in menu if isinstance(m, dict)}
+    out: list[SCH.MenuItem] = []
+    cents_list: list[int] = []
+
+    for nm in item_names:
+        key = str(nm or "").strip().lower()
+        m = name_map.get(key)
+        if not m:
+            continue
+        price = m.get("price")
+        price_cents = int(round(float(price) * 100)) if isinstance(price, (int, float, str)) and str(price) else 0
+        item_id = f"{restaurant_id}::{_slug(m.get('name',''))}"
+        out.append(SCH.MenuItem(
+            id=item_id,
+            restaurant_id=restaurant_id,
+            name=m.get("name") or "",
+            description=None,
+            price_cents=price_cents,
+            image_url=None,
+            tags=m.get("tags") or None
+        ))
+        cents_list.append(price_cents)
+
+    avg_cents = int(round(sum(cents_list) / len(cents_list))) if cents_list else 0
+    return out, avg_cents
+
+def _fallback_simple_choice(title: str, description: str, catalog: dict) -> dict:
+    # Token overlap fallback when LLM unavailable
+    import re
+    text = f"{title} {description}".lower()
+    tokens = set(re.findall(r"[a-zA-Z]+", text))
+    scores = []
+    for r in catalog.get("restaurants", []):
+        best = 0
+        for m in r.get("menu", []):
+            n = str(m.get("name","")).lower()
+            overlap = len(tokens.intersection(set(n.split())))
+            best = max(best, overlap)
+        scores.append((best, r.get("id")))
+    # pick top 3 ids by best overlap
+    top_ids = [rid for _, rid in sorted(scores, key=lambda x: x[0], reverse=True)[:3] if rid]
+    recs = []
+    for rid in top_ids:
+        r = _REST_BY_ID.get(rid)
+        if not r:
+            continue
+        # choose the first 3 items as naive pick
+        item_names = [m.get("name") for m in (r.get("menu") or [])][:3]
+        recs.append({"restaurant_id": rid, "item_names": item_names})
+    return {"recommendations": recs[:3]}
+
+@app.post("/recommend", response_model=SCH.RecommendOut)
+def recommend_api(body: SCH.RecommendIn):
+    if not body.video_id:
+        raise HTTPException(status_code=400, detail="video_id required")
+
+    title, desc = _lookup_video_meta(body.video_id)
+    print(f"[/recommend] video_id={body.video_id} title='{_short(title)}'")
+
+    # Build prompt
+    prompt = _build_choice_prompt(title, desc, _REST_CATALOG)
+
+    # Prefer Claude JSON tool if available; otherwise use fallback
+    raw_obj: dict
+    if CLAUDE is not None and hasattr(CLAUDE, "client"):
+        try:
+            # Create a one-off client with JSON schema so we don't touch the first CLAUDE instance
+            schema_client = None
+            try:
+                # Late import to avoid altering startup
+                from .src.Claude import ClaudeClient as _CC  # type: ignore
+                schema_client = _CC(json_schema=_claude_schema_for_choice(), temperature=0.0, max_tokens=800)
+            except Exception as e:
+                print(f"[/recommend] Could not init schema-bound ClaudeClient: {e}")
+
+            if schema_client is not None and hasattr(schema_client, "ask_enforce_json"):
+                txt = schema_client.ask_enforce_json(prompt)
+            else:
+                txt = CLAUDE.ask_enforce_json(prompt)  # fall back to existing client
+
+            raw_obj = json.loads(txt or "{}")
+            if not isinstance(raw_obj, dict) or "recommendations" not in raw_obj:
+                raise ValueError("Claude returned non-object or missing 'recommendations'")
+        except Exception as e:
+            print(f"[/recommend] Claude path failed: {e}")
+            raw_obj = _fallback_simple_choice(title, desc, _REST_CATALOG)
+    else:
+        print("[/recommend] CLAUDE unavailable, using fallback ranker")
+        raw_obj = _fallback_simple_choice(title, desc, _REST_CATALOG)
+
+    # Build typed response
+    blocks: list[SCH.RestaurantBlock] = []
+    for rec in raw_obj.get("recommendations", [])[:3]:
+        rid = (rec or {}).get("restaurant_id")
+        if rid not in _REST_BY_ID:
+            continue
+        item_names = list((rec or {}).get("item_names") or [])[:3]
+        items, avg_cents = _items_to_menu_models(rid, item_names)
+        # fill if Claude returned unknown names
+        if len(items) < 3:
+            r = _REST_BY_ID[rid]
+            existing = {it.name for it in items}
+            for m in (r.get("menu") or []):
+                if len(items) >= 3:
+                    break
+                n = m.get("name")
+                if not n or n in existing:
+                    continue
+                extra_items, _ = _items_to_menu_models(rid, [n])
+                if extra_items:
+                    items.append(extra_items[0])
+                    existing.add(n)
+            # recompute avg if needed
+            if items:
+                avg_cents = int(round(sum(i.price_cents for i in items) / len(items)))
+
+        blocks.append(SCH.RestaurantBlock(
+            restaurant_id=rid,
+            restaurant_name=_REST_BY_ID[rid].get("name") or rid,
+            items=items,
+            avg_price_cents=avg_cents
+        ))
+
+    try:
+        out = SCH.RecommendOut(recommendations=blocks)
+    except ValidationError as ve:
+        print(f"[/recommend] Validation error: {ve}")
+        raise HTTPException(status_code=502, detail="Recommendation validation failed")
+
+    print(f"[/recommend] returning {len(out.recommendations)} restaurants")
+    return out
+
+@app.post("/confirm")
+def confirm_api(body: SCH.ConfirmIn):
+    # Placeholder confirmation endpoint
+    print(f"[/confirm] restaurant_id={body.restaurant_id} items={len(body.item.name_snapshot) if hasattr(body, 'item') else 1}")
+    return {
+        "status": "ok",
+        "message": "Order confirmation placeholder",
+        "selection": {
+            "restaurant_id": body.restaurant_id,
+            "item": body.item.model_dump()
+        }
+    }

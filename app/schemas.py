@@ -81,3 +81,21 @@ class Profile(BaseModel):
     name: str
     credits_balance_cents: int
     default_address: dict
+
+# ---- Recommendation flow models ----
+
+class RestaurantBlock(BaseModel):
+    restaurant_id: str
+    restaurant_name: str
+    items: List[MenuItem]
+    avg_price_cents: int
+
+class RecommendIn(BaseModel):
+    video_id: str
+
+class RecommendOut(BaseModel):
+    recommendations: List[RestaurantBlock]
+
+class ConfirmIn(BaseModel):
+    restaurant_id: str
+    item: OrderItem

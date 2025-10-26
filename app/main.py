@@ -23,14 +23,7 @@ from .schemas import (
 from . import config
 from . import data_loader
 from .mock_data import options_for
-
-# Claude client (optional)
-try:
-    from .src.ClaudeClient import ClaudeClient  # requires ANTHROPIC_API_KEY in env
-except Exception as e:
-    print(f"[startup] Claude import failed: {e}")
-    traceback.print_exc()
-    ClaudeClient = None  # type: ignore
+from .src.ClaudeClient import ClaudeClient  # requires ANTHROPIC_API_KEY in env
 
 app = FastAPI(title="haaangry-demo-api", version="0.1.3")
 
@@ -43,16 +36,7 @@ app.add_middleware(
 # App state
 RAW_ITEMS: List[dict] = []
 DOWNLOAD_DIR: Path | None = None
-CLAUDE: Optional["ClaudeClient"] = None  # type: ignore[name-defined]
 
-# JSON schemas
-# Recipe links schema: an array of up to 3 entries, each {title, link}
-RECIPE_LINKS_SCHEMA = """
-[
-    {label: "Super delicios cake", "link": "https://..."},
-    ...
-]
-"""
 
 def _short(s: str, limit: int = 160) -> str:
     s = (s or "").replace("\n", "\\n")
@@ -60,7 +44,7 @@ def _short(s: str, limit: int = 160) -> str:
 
 @app.on_event("startup")
 def startup():
-    global RAW_ITEMS, DOWNLOAD_DIR, CLAUDE
+    global RAW_ITEMS, DOWNLOAD_DIR
 
     print(f"[startup] API version={app.version}")
     print(f"[startup] FEED_JSON={config.FEED_JSON} exists={config.FEED_JSON.exists()}")
@@ -85,15 +69,6 @@ def startup():
     else:
         print(f"[startup] No video mount. DOWNLOAD_DIR={DOWNLOAD_DIR} exists={DOWNLOAD_DIR.exists() if DOWNLOAD_DIR else None}")
 
-    # Claude init
-    if ClaudeClient is not None:
-        CLAUDE = ClaudeClient(
-            json_schema=RECIPE_LINKS_SCHEMA
-        )
-    else:
-        print("[startup] ClaudeClient unavailable; skipping LLM initialization.")
-
-
 @app.get("/feed", response_model=List[Video])
 def feed(request: Request) -> List[Video]:
     base = str(request.base_url)
@@ -101,7 +76,6 @@ def feed(request: Request) -> List[Video]:
     vids = data_loader.build_feed(RAW_ITEMS, base_url=base, mounted_prefix="/videos", mounted_dir=DOWNLOAD_DIR)
     print(f"[/feed] returning videos count={len(vids)}")
     return vids
-
 
 @app.get("/order/options", response_model=OrderOptions)
 def order_options(video_id: str = Query(...), title: str | None = None) -> OrderOptions:
@@ -116,7 +90,6 @@ def order_options(video_id: str = Query(...), title: str | None = None) -> Order
     opts = options_for(video_id, t or "")
     print(f"[/order/options] intent='{opts.intent}' top_restaurants={len(opts.top_restaurants)} prefill={len(opts.prefill)} suggested={len(opts.suggested_items)}")
     return opts
-
 
 # Compatibility for clients that mistakenly URL-encode the "?" into the path.
 @app.get("/order/options/{rest:path}", response_model=OrderOptions)
@@ -217,7 +190,10 @@ def _recipes_core(video_id: str, title_override: Optional[str] = None, desc_over
         print(f"[recipes:_core] Using overrides. title='{_short(title)}' desc_len={len(desc)}")
 
     prompt = _prompt_for_recipes(title, desc)
-    raw_text = CLAUDE.ask_web_enforce_json(prompt)
+    rec_links_fetcher = ClaudeClient(
+        json_schema="""[ {label: "Super delicios cake", "link": "https://..."}, ... ]"""
+    )
+    raw_text = rec_links_fetcher.ask_web_enforce_json(prompt)
 
     links = _parse_recipe_links_json(raw_text)
     q = title or desc or "N/A"

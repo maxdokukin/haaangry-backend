@@ -378,25 +378,49 @@ def recommend_api(body: SCH.RecommendIn):
     title, desc = _lookup_video_meta(body.video_id)
     print(f"[/recommend] video_id={body.video_id} title='{_short(title)}'")
 
-    # Build prompt
     prompt = _build_choice_prompt(title, desc, _REST_CATALOG)
 
-    restaraunt_agent = ClaudeClient(
-        json_schema='[{"restaurants": [{"id": "rest_001", "item_names": ["Margherita Pizza", "Caesar Salad", "Tiramisu"]}, ...]}'
+    # Enforce a top-level OBJECT with .restaurants[], each having id and items[]
+    restaurant_agent = ClaudeClient(
+        json_schema=(
+            '{"type":"object","properties":{"restaurants":{"type":"array","items":'
+            '{"type":"object","properties":{"id":{"type":"string"},"items":{"type":"array","items":{"type":"string"}}},'
+            '"required":["id"]}}},"required":["restaurants"]}'
+        )
     )
 
-    txt = restaraunt_agent.ask_enforce_json(prompt)
-    raw_obj = json.loads(txt or "{}")
-    print("raw_obj, ", raw_obj)
-    # Build typed response
+    txt = restaurant_agent.ask_enforce_json(prompt)
+    try:
+        data = json.loads(txt or "{}")
+    except json.JSONDecodeError:
+        data = {}
+
+    # Accept several shapes: object with restaurants[], or a bare list, or [{"restaurants":[...]}]
+    if isinstance(data, dict):
+        restaurants = data.get("restaurants") or []
+    elif isinstance(data, list):
+        if data and isinstance(data[0], dict) and "restaurants" in data[0]:
+            restaurants = data[0].get("restaurants") or []
+        else:
+            restaurants = data  # assume a bare list of recs
+    else:
+        restaurants = []
+
+    print("raw_obj, ", {"restaurants": restaurants})
+
     blocks: list[SCH.RestaurantBlock] = []
-    for rec in raw_obj.get("restaurants", [])[:3]:
-        rid = (rec or {}).get("id")
-        if rid not in _REST_BY_ID:
+    for rec in (restaurants or [])[:3]:
+        if not isinstance(rec, dict):
             continue
-        item_names = list((rec or {}).get("items") or [])[:3]
+        rid = rec.get("id")
+        if not rid or rid not in _REST_BY_ID:
+            continue
+
+        # Accept either "items" or legacy "item_names"
+        item_names = list(rec.get("items") or rec.get("item_names") or [])[:3]
+
         items, avg_cents = _items_to_menu_models(rid, item_names)
-        # fill if Claude returned unknown names
+
         if len(items) < 3:
             r = _REST_BY_ID[rid]
             existing = {it.name for it in items}
@@ -410,7 +434,6 @@ def recommend_api(body: SCH.RecommendIn):
                 if extra_items:
                     items.append(extra_items[0])
                     existing.add(n)
-            # recompute avg if needed
             if items:
                 avg_cents = int(round(sum(i.price_cents for i in items) / len(items)))
 
@@ -418,7 +441,7 @@ def recommend_api(body: SCH.RecommendIn):
             restaurant_id=rid,
             restaurant_name=_REST_BY_ID[rid].get("name") or rid,
             items=items,
-            avg_price_cents=avg_cents
+            avg_price_cents=avg_cents or 0
         ))
 
     try:
@@ -429,6 +452,7 @@ def recommend_api(body: SCH.RecommendIn):
 
     print(f"[/recommend] returning {len(out.recommendations)} restaurants")
     return out
+
 
 @app.post("/confirm")
 def confirm_api(body: SCH.ConfirmIn):
